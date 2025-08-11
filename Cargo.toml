@@ -1,0 +1,18 @@
+[package]
+name = "flat-knn"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+simsimd = "6.4.9"
+ordered-float = "4.2.0"
+rand = "0.9.2"
+rayon = "1.10.0"
+ndarray = { version = "0.15", features = ["blas"] } 
+ndarray-linalg = "0.16" 
+blas-src = { version = "0.10.0", features = ["intel-mkl"] }
+intel-mkl-src = { version = "0.8.0" }
+faiss = "*"
+
+[build]
+rustflags = ["-C", "target-cpu=native"]
