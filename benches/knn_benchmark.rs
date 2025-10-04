@@ -1,10 +1,11 @@
 #![feature(test)]
 
-extern crate blas_src;
+// extern crate blas_src;
 extern crate test;
 
 use faiss::*;
 use flat_knn::knn;
+use linfa_nn::NearestNeighbour;
 use rand::{distr::Uniform, Rng};
 
 use ndarray::{Array1, Array2, Axis};
@@ -62,14 +63,14 @@ fn benchmark_my_search_l2(b: &mut test::Bencher) {
     });
 }
 
-#[bench]
-fn benchmark_ndarray_knn_blas(b: &mut test::Bencher) {
-    let data = generate_random_ndarray(NUM_VECTORS);
-    let query = generate_random_ndarray(1).row(0).to_owned();
-    b.iter(|| {
-        let _ = knn_ndarray(&data, test::black_box(&query), test::black_box(K));
-    });
-}
+// #[bench]
+// fn benchmark_ndarray_knn_blas(b: &mut test::Bencher) {
+//     let data = generate_random_ndarray(NUM_VECTORS);
+//     let query = generate_random_ndarray(1).row(0).to_owned();
+//     b.iter(|| {
+//         let _ = knn_ndarray(&data, test::black_box(&query), test::black_box(K));
+//     });
+// }
 
 #[bench]
 fn benchmark_faiss_search(b: &mut test::Bencher) {
@@ -121,5 +122,23 @@ fn benchmark_faiss_hnsw32_sq8_search(b: &mut test::Bencher) {
         index
             .search(test::black_box(&query), test::black_box(K))
             .unwrap();
+    });
+}
+
+#[bench]
+fn benchmar_linfa(b: &mut test::Bencher) {
+    use linfa_nn::distance::L2Dist;
+    use linfa_nn::LinearSearch;
+    // let data = generate_random_ndarray(NUM_VECTORS);
+    let flat_data = generate_random_data(NUM_VECTORS);
+    let dataset =
+        Array2::from_shape_vec((NUM_VECTORS, DIM), flat_data).expect("Failed to reshape data.");
+    let query = generate_random_ndarray(1).row(0).to_owned();
+    let index = LinearSearch::new();
+    let index = index
+        .from_batch(&dataset, L2Dist {})
+        .expect("Failed to build LinearSearch index");
+    b.iter(|| {
+        let _ = index.k_nearest((&query).into(), K);
     });
 }
