@@ -1,0 +1,11 @@
+{
+  "rust-analyzer.server.extraEnv": {
+    "LD_LIBRARY_PATH": "/home/simon/Documents/dip/faiss/build/c_api/:$LD_LIBRARY_PATH",
+    "LIBRARY_PATH": "/home/simon/Documents/dip/faiss/build/c_api/:$LIBRARY_PATH"
+  },
+  "terminal.integrated.env.linux": {
+    "LD_LIBRARY_PATH": "/home/simon/Documents/dip/faiss/build/c_api/:$LD_LIBRARY_PATH",
+    "LIBRARY_PATH": "/home/simon/Documents/dip/faiss/build/c_api/:$LIBRARY_PATH",
+    "RUST_BACKTRACE": "1",
+  },
+}
