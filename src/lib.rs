@@ -85,6 +85,20 @@ impl Indexable for Vec<&[f32]> {
     }
 }
 
+impl Indexable for &Vec<&[f32]> {
+    fn get(&self, i: usize) -> &[f32] {
+        self[i]
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+}
+
 pub fn knn(data: impl Indexable, query: &[f32], k: usize, metric: Metric) -> Vec<(f32, usize)> {
     match metric {
         Metric::L2 => knn_l2(data, query, k),
