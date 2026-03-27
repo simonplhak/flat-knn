@@ -18,6 +18,3 @@ half = "2.7.1"
 ndarray = "0.16.0" 
 linfa = "0.8.0"
 linfa-nn = "0.8.0"
-
-[build]
-rustflags = ["-C", "target-cpu=native"]
