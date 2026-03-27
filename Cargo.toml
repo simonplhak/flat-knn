@@ -2,6 +2,10 @@
 name = "flat-knn"
 version = "0.1.0"
 edition = "2021"
+description = "Simple and efficient SIMD-accelerated library for k-nearest neighbors search."
+license = "MIT"
+repository = "https://github.com/simonplhak/flat-knn"
+authors = ["Simon Plhak"]
 
 [dependencies]
 simsimd = "6.4.9"
