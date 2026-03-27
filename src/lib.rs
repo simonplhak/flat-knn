@@ -187,8 +187,8 @@ impl VectorType for f16 {
     }
 
     #[inline(always)]
-    fn dot_product(_query: &[f16], _chunk: &[f16]) -> f32 {
-        panic!("Dot product for f16 is not implemented yet")
+    fn dot_product(query: &[f16], chunk: &[f16]) -> f32 {
+        simd_f16::dot(as_simsimd_slice(query), as_simsimd_slice(chunk)).unwrap() as f32
     }
 }
 
