@@ -2,7 +2,8 @@
 
 extern crate test;
 
-use flat_knn::knn;
+use flat_knn::{knn, L2};
+use half::f16;
 use linfa_nn::NearestNeighbour;
 use rand::{distr::Uniform, Rng};
 
@@ -52,12 +53,23 @@ fn benchmark_flat_knn_l2(b: &mut test::Bencher) {
     let query: Vec<f32> = generate_random_data(1);
 
     b.iter(|| {
-        knn(
-            test::black_box((&data, DIM)),
-            test::black_box(&query),
-            K,
-            flat_knn::Metric::L2,
-        );
+        knn::<_, L2>(test::black_box((&data, DIM)), test::black_box(&query), K);
+    });
+}
+
+#[bench]
+fn benchmark_flat_knn_l2_f16(b: &mut test::Bencher) {
+    let data: Vec<f16> = generate_random_data(NUM_VECTORS)
+        .into_iter()
+        .map(f16::from_f32)
+        .collect();
+    let query: Vec<f16> = generate_random_data(1)
+        .into_iter()
+        .map(f16::from_f32)
+        .collect();
+
+    b.iter(|| {
+        knn::<_, L2>(test::black_box((&data, DIM)), test::black_box(&query), K);
     });
 }
 

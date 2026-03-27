@@ -1,166 +1,135 @@
 #![feature(binary_heap_into_iter_sorted)]
+use half::f16;
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
-use simsimd::SpatialSimilarity;
+use simsimd::{f16 as simd_f16, SpatialSimilarity};
 use std::{cmp::Reverse, collections::BinaryHeap};
 
-pub enum Metric {
-    L2,
-    Dot,
+pub trait DistanceMetric<T>: Send + Sync {
+    type HeapItem: Ord + Send + Copy;
+    fn build_item(query: &[T], chunk: &[T], i: usize) -> Self::HeapItem;
+    fn extract_item(item: Self::HeapItem) -> (f32, usize);
 }
 
-pub trait Indexable: Send + Sync {
-    fn get(&self, i: usize) -> &[f32];
+pub struct L2;
+impl<T: VectorType> DistanceMetric<T> for L2 {
+    type HeapItem = (OrderedFloat<f32>, usize);
+
+    #[inline(always)]
+    fn build_item(query: &[T], chunk: &[T], i: usize) -> Self::HeapItem {
+        (OrderedFloat(T::l2_squared(query, chunk)), i)
+    }
+
+    #[inline(always)]
+    fn extract_item(item: Self::HeapItem) -> (f32, usize) {
+        (item.0 .0, item.1)
+    }
+}
+
+pub struct Dot;
+impl<T: VectorType> DistanceMetric<T> for Dot {
+    type HeapItem = Reverse<(OrderedFloat<f32>, usize)>;
+
+    #[inline(always)]
+    fn build_item(query: &[T], chunk: &[T], i: usize) -> Self::HeapItem {
+        Reverse((OrderedFloat(T::dot_product(query, chunk)), i))
+    }
+
+    #[inline(always)]
+    fn extract_item(item: Self::HeapItem) -> (f32, usize) {
+        (item.0 .0 .0, item.0 .1)
+    }
+}
+
+pub trait Indexable<T>: Send + Sync {
+    fn get(&self, i: usize) -> &[T];
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
-impl Indexable for (Vec<f32>, usize) {
-    fn get(&self, i: usize) -> &[f32] {
-        &self.0[i * self.1..(i + 1) * self.1]
+impl<T, C> Indexable<T> for (C, usize)
+where
+    T: Send + Sync,
+    C: AsRef<[T]> + Send + Sync,
+{
+    #[inline(always)]
+    fn get(&self, i: usize) -> &[T] {
+        &self.0.as_ref()[i * self.1..(i + 1) * self.1]
     }
 
+    #[inline(always)]
     fn len(&self) -> usize {
-        self.0.len() / self.1
+        self.0.as_ref().len() / self.1
     }
 }
 
-impl Indexable for (&[f32], usize) {
-    fn get(&self, i: usize) -> &[f32] {
-        &self.0[i * self.1..(i + 1) * self.1]
+impl<T, U> Indexable<T> for &[U]
+where
+    T: Send + Sync,
+    U: AsRef<[T]> + Send + Sync,
+{
+    #[inline(always)]
+    fn get(&self, i: usize) -> &[T] {
+        self[i].as_ref()
     }
 
+    #[inline(always)]
     fn len(&self) -> usize {
-        self.0.len() / self.1
+        <[U]>::len(self)
     }
 }
 
-impl Indexable for (&Vec<f32>, usize) {
-    fn get(&self, i: usize) -> &[f32] {
-        &self.0[i * self.1..(i + 1) * self.1]
+// Blanket implementation for Vec representations, like Vec<Vec<T>> or Vec<&[T]>
+impl<T, U> Indexable<T> for Vec<U>
+where
+    T: Send + Sync,
+    U: AsRef<[T]> + Send + Sync,
+{
+    #[inline(always)]
+    fn get(&self, i: usize) -> &[T] {
+        self[i].as_ref()
     }
 
-    fn len(&self) -> usize {
-        self.0.len() / self.1
-    }
-}
-
-impl Indexable for Vec<Vec<f32>> {
-    fn get(&self, i: usize) -> &[f32] {
-        &self[i]
-    }
-
+    #[inline(always)]
     fn len(&self) -> usize {
         self.len()
     }
 }
 
-impl Indexable for &[Vec<f32>] {
-    fn get(&self, i: usize) -> &[f32] {
-        &self[i]
+// Often passed as reference to Vec
+impl<T, U> Indexable<T> for &Vec<U>
+where
+    T: Send + Sync,
+    U: AsRef<[T]> + Send + Sync,
+{
+    #[inline(always)]
+    fn get(&self, i: usize) -> &[T] {
+        self[i].as_ref()
     }
 
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    fn len(&self) -> usize {
-        <[Vec<f32>]>::len(self)
-    }
-}
-
-impl Indexable for Vec<&[f32]> {
-    fn get(&self, i: usize) -> &[f32] {
-        self[i]
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
+    #[inline(always)]
     fn len(&self) -> usize {
         Vec::len(self)
     }
 }
 
-impl Indexable for &Vec<&[f32]> {
-    fn get(&self, i: usize) -> &[f32] {
-        self[i]
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    fn len(&self) -> usize {
-        Vec::len(self)
-    }
-}
-
-pub fn knn(data: impl Indexable, query: &[f32], k: usize, metric: Metric) -> Vec<(f32, usize)> {
-    match metric {
-        Metric::L2 => knn_l2(data, query, k),
-        Metric::Dot => knn_dot(data, query, k),
-    }
-}
-
-fn knn_l2(data: impl Indexable, query: &[f32], k: usize) -> Vec<(f32, usize)> {
+pub fn knn<T: VectorType, M: DistanceMetric<T>>(
+    data: impl Indexable<T>,
+    query: &[T],
+    k: usize,
+) -> Vec<(f32, usize)> {
     let heap = (0..data.len())
         .into_par_iter()
-        .map(|i| {
-            let chunk = data.get(i);
-            let dist = f32::l2sq(query, chunk).unwrap() as f32;
-            (OrderedFloat(dist), i)
-        })
-        .fold(
-            || BinaryHeap::with_capacity(k + 1),
-            |mut local_heap, (dist, i)| {
-                if local_heap.len() < k {
-                    local_heap.push((dist, i));
-                } else if let Some(mut top) = local_heap.peek_mut() {
-                    if dist < top.0 {
-                        *top = (dist, i);
-                    }
-                }
-                local_heap
-            },
-        )
-        .reduce(
-            || BinaryHeap::with_capacity(k + 1),
-            |mut heap1, heap2| {
-                for item in heap2.into_iter() {
-                    if heap1.len() < k {
-                        heap1.push(item);
-                    } else if let Some(mut top) = heap1.peek_mut() {
-                        if item.0 < top.0 {
-                            *top = item;
-                        }
-                    }
-                }
-                heap1
-            },
-        );
-    let res: Vec<_> = heap.into_iter_sorted().map(|(d, i)| (d.0, i)).collect();
-    res.into_iter().rev().collect()
-}
-
-fn knn_dot(data: impl Indexable, query: &[f32], k: usize) -> Vec<(f32, usize)> {
-    let heap = (0..data.len())
-        .into_par_iter()
-        .map(|i| {
-            let chunk = data.get(i);
-            let dist = f32::dot(query, chunk).unwrap() as f32;
-            Reverse((OrderedFloat(dist), i))
-        })
+        .map(|i| M::build_item(query, data.get(i), i))
         .fold(
             || BinaryHeap::with_capacity(k + 1),
             |mut local_heap, item| {
                 if local_heap.len() < k {
                     local_heap.push(item);
                 } else if let Some(mut top) = local_heap.peek_mut() {
-                    if item.0 > top.0 {
+                    if item < *top {
                         *top = item;
                     }
                 }
@@ -174,7 +143,7 @@ fn knn_dot(data: impl Indexable, query: &[f32], k: usize) -> Vec<(f32, usize)> {
                     if heap1.len() < k {
                         heap1.push(item);
                     } else if let Some(mut top) = heap1.peek_mut() {
-                        if item.0 > top.0 {
+                        if item < *top {
                             *top = item;
                         }
                     }
@@ -182,11 +151,45 @@ fn knn_dot(data: impl Indexable, query: &[f32], k: usize) -> Vec<(f32, usize)> {
                 heap1
             },
         );
-    let res: Vec<_> = heap
-        .into_iter_sorted()
-        .map(|Reverse((d, i))| (d.0, i))
-        .collect();
+
+    let res: Vec<_> = heap.into_iter_sorted().map(M::extract_item).collect();
     res.into_iter().rev().collect()
+}
+
+pub trait VectorType: Send + Sync + Sized {
+    fn l2_squared(query: &[Self], chunk: &[Self]) -> f32;
+    fn dot_product(query: &[Self], chunk: &[Self]) -> f32;
+}
+
+impl VectorType for f32 {
+    #[inline(always)]
+    fn l2_squared(query: &[f32], chunk: &[f32]) -> f32 {
+        f32::l2sq(query, chunk).unwrap() as f32
+    }
+
+    #[inline(always)]
+    fn dot_product(query: &[f32], chunk: &[f32]) -> f32 {
+        f32::dot(query, chunk).unwrap() as f32
+    }
+}
+
+#[inline(always)]
+fn as_simsimd_slice(slice: &[f16]) -> &[simd_f16] {
+    // SAFETY: Both types are exactly 16 bits (u16) under the hood
+    // and represent the identical IEEE 754 half-precision format.
+    unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const simd_f16, slice.len()) }
+}
+
+impl VectorType for f16 {
+    #[inline(always)]
+    fn l2_squared(query: &[f16], chunk: &[f16]) -> f32 {
+        simd_f16::l2sq(as_simsimd_slice(query), as_simsimd_slice(chunk)).unwrap() as f32
+    }
+
+    #[inline(always)]
+    fn dot_product(_query: &[f16], _chunk: &[f16]) -> f32 {
+        panic!("Dot product for f16 is not implemented yet")
+    }
 }
 
 #[cfg(test)]
@@ -221,7 +224,7 @@ mod tests {
         let dim: usize = 4;
         let query = [1.0, 2.0, 3.0, 5.0];
         let k = 4;
-        let neighbors = knn((&data, dim), &query, k, Metric::L2);
+        let neighbors = knn::<_, L2>((&data, dim), &query, k);
 
         assert_eq!(neighbors.len(), 4);
         assert_eq!(neighbors[0], (1.0, 0));
@@ -234,7 +237,7 @@ mod tests {
         let dim = 2;
         let query = [0.9, 0.1];
         let k = 4;
-        let neighbors = knn((&data, dim), &query, k, Metric::Dot);
+        let neighbors = knn::<_, Dot>((&data, dim), &query, k);
 
         assert_eq!(neighbors.len(), 4);
         assert_eq!(neighbors[0], (0.89, 0));
@@ -261,7 +264,7 @@ mod tests {
             .iter()
             .map(|(_, i)| *i)
             .collect::<Vec<_>>();
-        let pred = knn((&data, DIM), &query, 30, Metric::L2)
+        let pred = knn::<_, L2>((&data, DIM), &query, 30)
             .iter()
             .map(|(_, i)| *i)
             .collect::<Vec<_>>();
