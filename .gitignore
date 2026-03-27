@@ -2,3 +2,4 @@
 env/
 cmake-3.19.3/
 faiss/
+.cargo
