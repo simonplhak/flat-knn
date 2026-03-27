@@ -188,6 +188,7 @@ fn knn_dot(data: impl Indexable, query: &[f32], k: usize) -> Vec<(f32, usize)> {
         .collect();
     res.into_iter().rev().collect()
 }
+
 #[cfg(test)]
 mod tests {
     use linfa_nn::{distance::L2Dist, LinearSearch, NearestNeighbour};

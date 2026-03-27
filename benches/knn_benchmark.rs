@@ -1,9 +1,7 @@
 #![feature(test)]
 
-// extern crate blas_src;
 extern crate test;
 
-use faiss::*;
 use flat_knn::knn;
 use linfa_nn::NearestNeighbour;
 use rand::{distr::Uniform, Rng};
@@ -49,7 +47,7 @@ fn knn_ndarray(data: &Array2<f32>, query: &Array1<f32>, k: usize) -> Array1<usiz
 }
 
 #[bench]
-fn benchmark_my_search_l2(b: &mut test::Bencher) {
+fn benchmark_flat_knn_l2(b: &mut test::Bencher) {
     let data: Vec<f32> = generate_random_data(NUM_VECTORS);
     let query: Vec<f32> = generate_random_data(1);
 
@@ -63,70 +61,17 @@ fn benchmark_my_search_l2(b: &mut test::Bencher) {
     });
 }
 
-// #[bench]
-// fn benchmark_ndarray_knn_blas(b: &mut test::Bencher) {
-//     let data = generate_random_ndarray(NUM_VECTORS);
-//     let query = generate_random_ndarray(1).row(0).to_owned();
-//     b.iter(|| {
-//         let _ = knn_ndarray(&data, test::black_box(&query), test::black_box(K));
-//     });
-// }
-
 #[bench]
-fn benchmark_faiss_search(b: &mut test::Bencher) {
-    use faiss::*;
-    let data: Vec<f32> = generate_random_data(NUM_VECTORS);
-    let mut index = index_factory(DIM as u32, "Flat", MetricType::L2).unwrap();
-
-    index.add(&data).unwrap();
-
-    let query: Vec<f32> = generate_random_data(1);
-
+fn benchmark_ndarray_knn_blas(b: &mut test::Bencher) {
+    let data = generate_random_ndarray(NUM_VECTORS);
+    let query = generate_random_ndarray(1).row(0).to_owned();
     b.iter(|| {
-        index
-            .search(test::black_box(&query), test::black_box(K))
-            .unwrap();
+        let _ = knn_ndarray(&data, test::black_box(&query), test::black_box(K));
     });
 }
 
 #[bench]
-fn benchmark_faiss_hnsw32_search(b: &mut test::Bencher) {
-    let data: Vec<f32> = generate_random_data(NUM_VECTORS);
-
-    let mut index = index_factory(DIM as u32, "HNSW32", MetricType::L2).unwrap();
-    index.add(&data).unwrap();
-
-    let query: Vec<f32> = generate_random_data(1);
-
-    b.iter(|| {
-        index
-            .search(test::black_box(&query), test::black_box(K))
-            .unwrap();
-    });
-}
-
-#[bench]
-fn benchmark_faiss_hnsw32_sq8_search(b: &mut test::Bencher) {
-    let data: Vec<f32> = generate_random_data(NUM_VECTORS);
-
-    let mut index = index_factory(DIM as u32, "HNSW32_SQ8", MetricType::L2).unwrap();
-
-    let start = std::time::Instant::now();
-    index.train(&data).unwrap();
-    let duration = start.elapsed();
-    println!("HNSW32_SQ8 training time: {}ms", duration.as_millis());
-
-    let query: Vec<f32> = generate_random_data(1);
-
-    b.iter(|| {
-        index
-            .search(test::black_box(&query), test::black_box(K))
-            .unwrap();
-    });
-}
-
-#[bench]
-fn benchmar_linfa(b: &mut test::Bencher) {
+fn benchmark_linfa(b: &mut test::Bencher) {
     use linfa_nn::distance::L2Dist;
     use linfa_nn::LinearSearch;
     // let data = generate_random_ndarray(NUM_VECTORS);
