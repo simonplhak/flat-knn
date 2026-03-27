@@ -4,6 +4,15 @@ Simple and efficient library for k-nearest neighbors search in Rust.
 
 Library takes advantages of the SIMD capabilities of modern CPUs to perform fast k-NN search. It features a generic API that supports multiple data layouts, numeric types (`f32`, `f16`), and distance metrics without any runtime overhead.
 
+## Installation
+
+Add the following to your `Cargo.toml`. Currently, the library can be installed directly from the GitHub repository:
+
+```toml
+[dependencies]
+flat-knn = { git = "https://github.com/simonplhak/flat-knn" }
+```
+
 ## Usage
 
 ```rust
